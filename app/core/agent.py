@@ -175,7 +175,7 @@ class Agent:
                 tool_results.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
-                    "content": result
+                    "content": str(result)
                 })
             except ToolError as e:
                 error_msg = str(e)

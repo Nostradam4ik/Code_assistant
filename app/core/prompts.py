@@ -26,13 +26,12 @@ def build_system_prompt(memory: str | None = None) -> str:
     return prompt
 
 
-def format_tool_result(tool_name: str, result: str, is_error: bool = False) -> dict[str, Any]:
+def format_tool_result(tool_call_id: str, result: str) -> dict[str, Any]:
     """Format tool execution result for the API."""
     return {
-        "type": "tool_result",
-        "tool_use_id": tool_name,
-        "content": result,
-        "is_error": is_error
+        "role": "tool",
+        "tool_call_id": tool_call_id,
+        "content": result
     }
 
 
