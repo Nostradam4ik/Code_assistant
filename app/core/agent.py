@@ -8,7 +8,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.prompt import Prompt
 
-from app.config import ASSISTANT_NAME, THEME, MAX_TOOL_ITERATIONS
+from app.config import ASSISTANT_NAME, THEME, MAX_TOOL_ITERATIONS, MAX_HISTORY_MESSAGES
 from app.llm import GroqClient
 from app.core import MemoryManager, build_system_prompt
 from app.tools import get_registry, ToolError
@@ -51,6 +51,9 @@ class Agent:
         memory_context = self.memory.read_memory()
         system_prompt = build_system_prompt(memory_context if memory_context else None)
         
+        # Trim history before the first API call
+        self._trim_history()
+        
         try:
             # Call Groq API
             response = self.client.create_message(
@@ -74,19 +77,22 @@ class Agent:
                     self._print_response(assistant_message.content)
                 
                 # Add assistant message to history
-                self.conversation_history.append({
+                assistant_history_entry = {
                     "role": "assistant",
                     "content": assistant_message.content or ""
-                })
+                }
+                if assistant_message.tool_calls:
+                    assistant_history_entry["tool_calls"] = assistant_message.tool_calls
+                self.conversation_history.append(assistant_history_entry)
                 
                 # Execute tool calls
                 tool_results = self._execute_tool_calls(assistant_message.tool_calls)
                 
                 # Add tool results to history
-                self.conversation_history.append({
-                    "role": "user",
-                    "content": tool_results
-                })
+                self.conversation_history.extend(tool_results)
+                
+                # Trim history before subsequent API calls in the tool loop
+                self._trim_history()
                 
                 # Get next response from assistant
                 response = self.client.create_message(
@@ -110,10 +116,13 @@ class Agent:
                 self._print_response(assistant_message.content)
             
             # Add final message to history
-            self.conversation_history.append({
+            final_message_entry = {
                 "role": "assistant",
                 "content": assistant_message.content or ""
-            })
+            }
+            if assistant_message.tool_calls:
+                final_message_entry["tool_calls"] = assistant_message.tool_calls
+            self.conversation_history.append(final_message_entry)
             
             # Store in memory
             self.memory.add_entry("user", user_message)
@@ -125,6 +134,12 @@ class Agent:
             error_msg = f"Error: {str(e)}"
             self.console.print(f"[{THEME['error']}]{error_msg}[/{THEME['error']}]")
             return None
+
+    def _trim_history(self) -> None:
+        """Keep only the first message and the last N messages to manage context window."""
+        if len(self.conversation_history) > MAX_HISTORY_MESSAGES:
+            first_message = self.conversation_history[0]
+            self.conversation_history = [first_message] + self.conversation_history[-MAX_HISTORY_MESSAGES:]
     
     def _execute_tool_calls(self, tool_calls: Any) -> list[dict[str, Any]]:
         """
@@ -158,8 +173,8 @@ class Agent:
                 self.console.print(f"[{THEME['success']}]✓ Success[/{THEME['success']}]\n{result}")
                 
                 tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tool_call.id,
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
                     "content": result
                 })
             except ToolError as e:
@@ -167,10 +182,9 @@ class Agent:
                 self.console.print(f"[{THEME['error']}]✗ Error: {error_msg}[/{THEME['error']}]")
                 
                 tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tool_call.id,
-                    "content": f"Error: {error_msg}",
-                    "is_error": True
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": f"Error: {error_msg}"
                 })
         
         return tool_results

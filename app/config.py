@@ -10,6 +10,7 @@ GROQ_MODEL: str = "mixtral-8x7b-32768"
 # Assistant Configuration
 ASSISTANT_NAME: str = "Code Assistant"
 MEMORY_FILE: str = "MEMORY.md"
+MAX_HISTORY_MESSAGES: int = 20
 MAX_TOOL_ITERATIONS: int = 10
 MAX_MEMORY_ENTRIES: int = 50
 MAX_FILE_SIZE: int = 10 * 1024 * 1024  # 10MB
